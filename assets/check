@@ -1,0 +1,66 @@
+#!/bin/sh
+
+set -e
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+info(){
+    local message="$@"
+    prefix='concourse-git-build-number-resource:check>'
+    printf "\033[1;32m$prefix $message\033[0m\n"
+}
+
+in="$(cat)"
+
+uri="$(echo $in | jq -r '.source.uri // ""')"
+branch="$(echo $in | jq -r '.source.branch // "build_number"')"
+private_key="$(echo $in | jq -r '.source.private_key // ""')"
+
+git config --global user.email "concourse@pipeline"
+git config --global user.name "Concourse Pipeline"
+
+cd /tmp
+
+if [ "$private_key" != "" ]; then
+	info configuring ssh private key
+	eval $(ssh-agent)
+	trap "kill $SSH_AGENT_PID" 0
+	echo "$private_key" | SSH_ASKPASS=$(dirname $0)/askpass.sh DISPLAY= ssh-add -
+
+    mkdir -p ~/.ssh
+	echo StrictHostKeyChecking no >> ~/.ssh/config
+	echo LogLevel quiet >> ~/.ssh/config
+    chmod go-rwx ~/.ssh/config
+fi
+
+mkdir clone
+cd clone
+
+info cloning $branch branch
+
+set +e
+git clone --depth 1 --branch "$branch" "$uri" .
+status=$?
+set -e
+
+if [ "$status" -ne "0" ]; then
+    info creating new $branch branch with build number 1
+    git init
+    git remote add origin $uri
+    git checkout --orphan "$branch"
+    build_number=1
+else
+    build_number=$(expr $(cat build_number) + 1)
+    info setting build number $build_number
+fi
+
+echo $build_number > build_number
+git add build_number
+git commit -m "new build number: $build_number"
+
+info pushing $branch branch
+git push origin "$branch"
+
+echo "[{\"build_number\":\"$build_number\"}]" >&3
+info done

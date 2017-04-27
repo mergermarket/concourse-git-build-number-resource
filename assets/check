@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 
-set -e
+set -euo pipefail
 
 exec 3>&1 # make stdout available as fd 3 for the result
 exec 1>&2 # redirect all output to stderr for logging
@@ -11,11 +11,17 @@ info(){
     printf "\033[1;32m$prefix $message\033[0m\n"
 }
 
-in="$(cat)"
+in="$(jq .)"
 
-uri="$(echo $in | jq -r '.source.uri // ""')"
-branch="$(echo $in | jq -r '.source.branch // "build_number"')"
-private_key="$(echo $in | jq -r '.source.private_key // ""')"
+uri="$(echo "$in" | jq -r '.source.uri // ""')"
+
+if [ -z "$uri" ]; then
+    echo ".source.uri is required" >&2
+    exit 1
+fi
+
+branch="$(echo "$in" | jq -r '.source.branch // "build_number"')"
+private_key="$(echo "$in" | jq -r '.source.private_key // ""')"
 
 git config --global user.email "concourse@pipeline"
 git config --global user.name "Concourse Pipeline"
@@ -64,3 +70,4 @@ git push origin "$branch"
 
 echo "[{\"build_number\":\"$build_number\"}]" >&3
 info done
+

@@ -9,6 +9,8 @@ in="$(cat)"
 version="$(echo "$in" | jq .version)"
 build_number="$(echo "$in" | jq .version.build_number)"
 
+echo "$build_number" > "$1/build_number"
+
 echo "{
   \"version\": $version,
   \"metadata\": [
